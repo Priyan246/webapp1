@@ -23,4 +23,5 @@ public class Transaction {
     private BigDecimal amount;
     private LocalDateTime timestamp;
     private String status; // SUCCESS or FAILED
+    private String description;
 }

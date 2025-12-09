@@ -22,5 +22,6 @@ public class Debt {
 
     private BigDecimal amount;
     private LocalDateTime createdAt;
+    private String description;
     private boolean isPaid = false;
 }

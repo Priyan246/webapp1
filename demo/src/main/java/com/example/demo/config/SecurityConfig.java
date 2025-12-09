@@ -30,15 +30,16 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.disable())
                 .headers(headers -> headers.frameOptions(frame -> frame.disable()))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(PathRequest.toH2Console()).permitAll()
-                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers(PathRequest.toH2Console()).permitAll() // Allow Database
+                        .requestMatchers("/api/auth/**").permitAll() // Allow Login
 
-                        // ADD THIS LINE: Allow public access to wallet for testing
+                        // ADD THIS LINE: Unlock the Wallet for testing
                         .requestMatchers("/api/wallet/**").permitAll()
 
-                        .anyRequest().authenticated()
+                        .anyRequest().authenticated() // Lock everything else
                 )
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
         return http.build();
-}}
+    }
+}

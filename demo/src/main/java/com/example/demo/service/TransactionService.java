@@ -6,7 +6,7 @@ import com.example.demo.model.User;
 import com.example.demo.repository.DebtRepository;
 import com.example.demo.repository.TransactionRepository;
 import com.example.demo.repository.UserRepository;
-import com.example.demo.util.CurrencyUtil; // Helper for ₹ formatting
+import com.example.demo.util.CurrencyUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -24,10 +24,22 @@ public class TransactionService {
     @Autowired private DebtRepository debtRepository;
     @Autowired private PasswordEncoder passwordEncoder;
 
-    // --- FEATURE 1: CORE MONEY TRANSFER ---
+    // --- FEATURE 1: ADD MONEY (TOP-UP) ---
     @Transactional
-    public Transaction transferMoney(Long senderId, String receiverPhone, BigDecimal amount, String rawPin) {
-        // 1. Safety Check: Prevent negative transfers (ICG Requirement)
+    public User topUpWallet(Long userId, BigDecimal amount) {
+        if (amount.compareTo(BigDecimal.ZERO) <= 0) throw new RuntimeException("Amount must be positive");
+
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        user.setBalance(user.getBalance().add(amount));
+        return userRepository.save(user);
+    }
+
+    // --- FEATURE 2: CORE MONEY TRANSFER (Updated with Description) ---
+    @Transactional
+    public Transaction transferMoney(Long senderId, String receiverPhone, BigDecimal amount, String rawPin, String description) {
+        // 1. Safety Check
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new RuntimeException("Transfer amount must be positive");
         }
@@ -57,23 +69,24 @@ public class TransactionService {
         userRepository.save(sender);
         userRepository.save(receiver);
 
-        // 7. Save Transaction Record
+        // 7. Save Transaction (With Description!)
         Transaction transaction = new Transaction();
         transaction.setSender(sender);
         transaction.setReceiver(receiver);
         transaction.setAmount(amount);
+        transaction.setDescription(description); // <--- SAVES "Movies", "Turf", etc.
         transaction.setTimestamp(LocalDateTime.now());
         transaction.setStatus("SUCCESS");
 
         return transactionRepository.save(transaction);
     }
 
-    // --- FEATURE 2: SPLIT BILL ---
-    public void splitBill(Long payerId, BigDecimal totalAmount, List<String> friendPhones) {
+    // --- FEATURE 3: SPLIT BILL (Updated with Description) ---
+    public void splitBill(Long payerId, BigDecimal totalAmount, List<String> friendPhones, String description) {
         User payer = userRepository.findById(payerId)
                 .orElseThrow(() -> new RuntimeException("Payer not found"));
 
-        // Calculate split (Total / (Friends + Payer))
+        // Calculate split
         BigDecimal splitAmount = totalAmount.divide(
                 BigDecimal.valueOf(friendPhones.size() + 1),
                 2,
@@ -88,6 +101,7 @@ public class TransactionService {
             debt.setCreditor(payer);
             debt.setDebtor(friend);
             debt.setAmount(splitAmount);
+            debt.setDescription(description); // <--- SAVES "Dinner", "Trip", etc.
             debt.setCreatedAt(LocalDateTime.now());
             debt.setPaid(false);
 
@@ -95,25 +109,21 @@ public class TransactionService {
         }
     }
 
-    // --- FEATURE 3: DEBT SIMPLIFICATION (CASH FLOW MINIMIZATION) ---
+    // --- FEATURE 4: DEBT SIMPLIFICATION ---
     public List<String> simplifyDebts() {
-        // 1. Fetch all unpaid debts
         List<Debt> allDebts = debtRepository.findAll();
         Map<User, BigDecimal> netBalance = new HashMap<>();
 
-        // 2. Calculate Net Flow
         for (Debt d : allDebts) {
             if (!d.isPaid()) {
                 User payer = d.getDebtor();
                 User receiver = d.getCreditor();
                 BigDecimal amount = d.getAmount();
-
                 netBalance.put(payer, netBalance.getOrDefault(payer, BigDecimal.ZERO).subtract(amount));
                 netBalance.put(receiver, netBalance.getOrDefault(receiver, BigDecimal.ZERO).add(amount));
             }
         }
 
-        // 3. Separate into "Givers" and "Receivers"
         PriorityQueue<UserBalance> givers = new PriorityQueue<>((a, b) -> a.amount.compareTo(b.amount));
         PriorityQueue<UserBalance> receivers = new PriorityQueue<>((a, b) -> b.amount.compareTo(a.amount));
 
@@ -125,13 +135,11 @@ public class TransactionService {
             }
         }
 
-        // 4. Greedy Matching Algorithm
         List<String> simplifiedPlan = new ArrayList<>();
 
         while (!givers.isEmpty() && !receivers.isEmpty()) {
             UserBalance giver = givers.poll();
             UserBalance receiver = receivers.poll();
-
             BigDecimal amountToSettle = giver.amount.abs().min(receiver.amount);
 
             simplifiedPlan.add(giver.user.getPhoneNumber() + " pays " +
@@ -148,23 +156,17 @@ public class TransactionService {
         if (simplifiedPlan.isEmpty()) {
             simplifiedPlan.add("All debts are settled! No payments needed.");
         }
-
         return simplifiedPlan;
     }
 
-    // --- FEATURE 4: TRANSACTION HISTORY ---
+    // --- FEATURE 5: HISTORY ---
     public List<Transaction> getHistory(Long userId) {
         return transactionRepository.findBySenderIdOrReceiverId(userId, userId);
     }
 
-    // Helper class for Priority Queue
     private static class UserBalance {
         User user;
         BigDecimal amount;
-
-        public UserBalance(User user, BigDecimal amount) {
-            this.user = user;
-            this.amount = amount;
-        }
+        public UserBalance(User user, BigDecimal amount) { this.user = user; this.amount = amount; }
     }
 }

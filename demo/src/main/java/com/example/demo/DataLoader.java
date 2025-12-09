@@ -6,7 +6,6 @@ import com.example.demo.model.User;
 import com.example.demo.repository.DebtRepository;
 import com.example.demo.repository.TransactionRepository;
 import com.example.demo.service.UserService;
-import com.example.demo.util.CurrencyUtil;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,31 +23,40 @@ public class DataLoader {
             TransactionRepository transactionRepository) {
 
         return args -> {
-            System.out.println("🔄 Starting Data Loader...");
+            System.out.println("🔄 Starting Master Data Loader...");
 
-            // 1. CREATE USERS (Alice, Bob, Charlie)
-            // Giving them ₹5000 each so you can test transfers immediately
-            User alice = createUser(userService, "111", "alice@test.com", "Alice", "5000.00");
-            User bob = createUser(userService, "222", "bob@test.com", "Bob", "5000.00");
-            User charlie = createUser(userService, "333", "charlie@test.com", "Charlie", "5000.00");
+            // --- 1. TEST LOGIN & WALLET (Top-Up) ---
+            // We give them money immediately to simulate a "Top Up" having happened.
+            User alice = createUser(userService, "111", "alice@test.com", "Alice", "10000.00");
+            User bob = createUser(userService, "222", "bob@test.com", "Bob", "500.00");
+            User charlie = createUser(userService, "333", "charlie@test.com", "Charlie", "100.00");
 
             if (alice != null && bob != null && charlie != null) {
 
-                // 2. CREATE HISTORY (So Dashboard isn't empty)
-                // Alice sent ₹100 to Bob yesterday
-                createTransaction(transactionRepository, alice, bob, "100.00");
-                // Bob sent ₹50 to Charlie today
-                createTransaction(transactionRepository, bob, charlie, "50.00");
-                System.out.println("✅ Created Past Transactions (Check History!)");
+                // --- 2. TEST HISTORY (With Descriptions) ---
+                // Simulating past activity so the dashboard looks alive.
+                createTransaction(transactionRepository, alice, bob, "500.00", "Weekend Trip to Goa");
+                createTransaction(transactionRepository, bob, charlie, "200.00", "Dinner at Taj");
+                System.out.println("✅ History Created: Checked 'Description' field.");
 
-                // 3. CREATE DEBT SCENARIO (For 'Simplify' Algorithm)
-                // Scenario: Alice owes Bob ₹50. Bob owes Charlie ₹50.
-                // Algorithm should say: "Alice pays Charlie ₹50"
-                createDebt(debtRepository, alice, bob, "50.00");
-                createDebt(debtRepository, bob, charlie, "50.00");
-                System.out.println("✅ Created Debt Loop: Alice->Bob->Charlie (Check Simplify!)");
+                // --- 3. TEST BUDGET SPLITTER ---
+                // Scenario: Alice paid ₹300 for 'Team Lunch' split with Bob & Charlie.
+                // Math: ₹300 / 3 people = ₹100 each.
+                // Result: Bob owes Alice ₹100, Charlie owes Alice ₹100.
+                createDebt(debtRepository, bob, alice, "100.00", "Team Lunch Split");
+                createDebt(debtRepository, charlie, alice, "100.00", "Team Lunch Split");
+                System.out.println("✅ Budget Splitter Test Data Created.");
 
-                System.out.println("🚀 Backend Ready! Test Credentials: Phone '111', PIN '0000'");
+                // --- 4. TEST DEBT SETTLER (Transaction Minimization) ---
+                // Scenario: Circular Debt Loop.
+                // Alice owes Bob ₹50.
+                // Bob owes Charlie ₹50.
+                // ALGORITHM EXPECTATION: Alice should pay Charlie ₹50 directly (Skipping Bob).
+                createDebt(debtRepository, alice, bob, "50.00", "Borrowed for Cab");
+                createDebt(debtRepository, bob, charlie, "50.00", "Borrowed for Snacks");
+                System.out.println("✅ Debt Loop Created (Alice->Bob->Charlie). Check /simplify endpoint!");
+
+                System.out.println("🚀 SYSTEM READY! Login with Phone: '111', Pass: 'pass', PIN: '0000'");
             }
         };
     }
@@ -62,32 +70,32 @@ public class DataLoader {
             u.setPasswordHash("pass"); // Login Password
             u.setTransactionPinHash("0000"); // Transaction PIN
             u.setBalance(new BigDecimal(balance));
-            User saved = service.registerUser(u);
-            System.out.println("👤 Created User: " + name + " (Phone: " + phone + ")");
-            return saved;
+            return service.registerUser(u);
         } catch (Exception e) {
-            System.out.println("⚠️ User " + name + " already exists.");
+            System.out.println("⚠️ User " + name + " already exists. Skipping.");
             return null;
         }
     }
 
-    // --- Helper to Create Past Transactions ---
-    private void createTransaction(TransactionRepository repo, User sender, User receiver, String amount) {
+    // --- Helper to Create Transactions ---
+    private void createTransaction(TransactionRepository repo, User sender, User receiver, String amount, String description) {
         Transaction t = new Transaction();
         t.setSender(sender);
         t.setReceiver(receiver);
         t.setAmount(new BigDecimal(amount));
-        t.setTimestamp(LocalDateTime.now().minusDays(1)); // Backdated
+        t.setDescription(description); // Stores "Goa Trip", etc.
+        t.setTimestamp(LocalDateTime.now().minusDays(1)); // Happened yesterday
         t.setStatus("SUCCESS");
         repo.save(t);
     }
 
     // --- Helper to Create Debts ---
-    private void createDebt(DebtRepository repo, User debtor, User creditor, String amount) {
+    private void createDebt(DebtRepository repo, User debtor, User creditor, String amount, String description) {
         Debt d = new Debt();
         d.setDebtor(debtor);
         d.setCreditor(creditor);
         d.setAmount(new BigDecimal(amount));
+        d.setDescription(description); // Stores "Team Lunch", etc.
         d.setCreatedAt(LocalDateTime.now());
         d.setPaid(false);
         repo.save(d);

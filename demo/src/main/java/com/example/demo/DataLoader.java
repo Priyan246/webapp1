@@ -25,79 +25,71 @@ public class DataLoader {
         return args -> {
             System.out.println("🔄 Starting Master Data Loader...");
 
-            // --- 1. TEST LOGIN & WALLET (Top-Up) ---
-            // We give them money immediately to simulate a "Top Up" having happened.
-            User alice = createUser(userService, "111", "alice@test.com", "Alice", "10000.00");
-            User bob = createUser(userService, "222", "bob@test.com", "Bob", "500.00");
-            User charlie = createUser(userService, "333", "charlie@test.com", "Charlie", "100.00");
+            // --- 1. CREATE USERS (With new Name/UniqueId fields) ---
+            User alice = createUser(userService, "111", "alice@test.com", "Alice", "@Alice_Wonder", "10000.00");
+            User bob = createUser(userService, "222", "bob@test.com", "Bob", "@Bob_Builder", "500.00");
+            User charlie = createUser(userService, "333", "charlie@test.com", "Charlie", "@Charlie_Angle", "100.00");
 
             if (alice != null && bob != null && charlie != null) {
 
-                // --- 2. TEST HISTORY (With Descriptions) ---
-                // Simulating past activity so the dashboard looks alive.
+                // --- 2. CREATE TRANSACTIONS ---
                 createTransaction(transactionRepository, alice, bob, "500.00", "Weekend Trip to Goa");
                 createTransaction(transactionRepository, bob, charlie, "200.00", "Dinner at Taj");
-                System.out.println("✅ History Created: Checked 'Description' field.");
+                System.out.println("✅ History Created.");
 
-                // --- 3. TEST BUDGET SPLITTER ---
-                // Scenario: Alice paid ₹300 for 'Team Lunch' split with Bob & Charlie.
-                // Math: ₹300 / 3 people = ₹100 each.
-                // Result: Bob owes Alice ₹100, Charlie owes Alice ₹100.
-                createDebt(debtRepository, bob, alice, "100.00", "Team Lunch Split");
+                // --- 3. CREATE DEBTS ---
+                // Bob owes Alice 100 (Overdue logic test)
+                Debt debt1 = createDebt(debtRepository, bob, alice, "100.00", "Team Lunch Split");
+                // Manually backdate this debt to make it "Overdue" (Older than 10 days)
+                debt1.setCreatedAt(LocalDateTime.now().minusDays(15));
+                debtRepository.save(debt1);
+
                 createDebt(debtRepository, charlie, alice, "100.00", "Team Lunch Split");
+
                 System.out.println("✅ Budget Splitter Test Data Created.");
-
-                // --- 4. TEST DEBT SETTLER (Transaction Minimization) ---
-                // Scenario: Circular Debt Loop.
-                // Alice owes Bob ₹50.
-                // Bob owes Charlie ₹50.
-                // ALGORITHM EXPECTATION: Alice should pay Charlie ₹50 directly (Skipping Bob).
-                createDebt(debtRepository, alice, bob, "50.00", "Borrowed for Cab");
-                createDebt(debtRepository, bob, charlie, "50.00", "Borrowed for Snacks");
-                System.out.println("✅ Debt Loop Created (Alice->Bob->Charlie). Check /simplify endpoint!");
-
-                System.out.println("🚀 SYSTEM READY! Login with Phone: '111', Pass: 'pass', PIN: '0000'");
+                System.out.println("🚀 SYSTEM READY! Login with Phone: '111'");
             }
         };
     }
 
     // --- Helper to Create User ---
-    private User createUser(UserService service, String phone, String email, String name, String balance) {
+    private User createUser(UserService service, String phone, String email, String name, String uniqueId, String balance) {
         try {
             User u = new User();
             u.setPhoneNumber(phone);
             u.setEmail(email);
-            u.setPasswordHash("pass"); // Login Password
-            u.setTransactionPinHash("0000"); // Transaction PIN
+            u.setName(name);          // ✅ NEW: Required field
+            u.setUniqueId(uniqueId);  // ✅ NEW: Required field
+            u.setPasswordHash("pass");
+            u.setTransactionPinHash("0000");
             u.setBalance(new BigDecimal(balance));
             return service.registerUser(u);
         } catch (Exception e) {
-            System.out.println("⚠️ User " + name + " already exists. Skipping.");
+            // Print the ACTUAL error so we know why it failed
+            System.out.println("⚠️ Failed to create user " + name + ": " + e.getMessage());
             return null;
         }
     }
 
-    // --- Helper to Create Transactions ---
     private void createTransaction(TransactionRepository repo, User sender, User receiver, String amount, String description) {
         Transaction t = new Transaction();
         t.setSender(sender);
         t.setReceiver(receiver);
         t.setAmount(new BigDecimal(amount));
-        t.setDescription(description); // Stores "Goa Trip", etc.
-        t.setTimestamp(LocalDateTime.now().minusDays(1)); // Happened yesterday
+        t.setDescription(description);
+        t.setTimestamp(LocalDateTime.now().minusDays(1));
         t.setStatus("SUCCESS");
         repo.save(t);
     }
 
-    // --- Helper to Create Debts ---
-    private void createDebt(DebtRepository repo, User debtor, User creditor, String amount, String description) {
+    private Debt createDebt(DebtRepository repo, User debtor, User creditor, String amount, String description) {
         Debt d = new Debt();
         d.setDebtor(debtor);
         d.setCreditor(creditor);
         d.setAmount(new BigDecimal(amount));
-        d.setDescription(description); // Stores "Team Lunch", etc.
+        d.setDescription(description);
         d.setCreatedAt(LocalDateTime.now());
         d.setPaid(false);
-        repo.save(d);
+        return repo.save(d);
     }
 }

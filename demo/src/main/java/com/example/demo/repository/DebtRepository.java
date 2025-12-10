@@ -7,7 +7,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 public interface DebtRepository extends JpaRepository<Debt, Long> {
-    List<Debt> findByDebtorId(Long debtorId);
+
+    List<Debt> findByCreditorIdOrDebtorId(Long creditorId, Long debtorId);
 
     @Query("SELECT d FROM Debt d WHERE d.isPaid = false AND d.createdAt < :cutoffDate")
     List<Debt> findOverdueDebts(LocalDateTime cutoffDate);

@@ -12,4 +12,5 @@ public interface DebtRepository extends JpaRepository<Debt, Long> {
 
     @Query("SELECT d FROM Debt d WHERE d.isPaid = false AND d.createdAt < :cutoffDate")
     List<Debt> findOverdueDebts(LocalDateTime cutoffDate);
+
 }

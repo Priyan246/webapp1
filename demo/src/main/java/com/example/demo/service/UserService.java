@@ -19,39 +19,33 @@ public class UserService implements UserDetailsService {
     private UserRepository userRepository;
 
     @Autowired
-    @Lazy // Prevents circular dependency issues during startup
+    @Lazy // Good practice: Prevents circular dependency with SecurityConfig
     private PasswordEncoder passwordEncoder;
 
-    // LOGIN LOGIC: Tells Spring Security how to find a user
+    // DELETED THE SELF-REFERENCING LINES HERE
+
+    // LOGIN LOGIC
     @Override
     public UserDetails loadUserByUsername(String phoneNumber) throws UsernameNotFoundException {
-        // 1. Find user by Phone Number (since that's your login ID)
         User user = userRepository.findByPhoneNumber(phoneNumber)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with phone: " + phoneNumber));
 
-        // 2. Return a Spring Security "User" object
         return new org.springframework.security.core.userdetails.User(
                 user.getPhoneNumber(),
                 user.getPasswordHash(),
-                new ArrayList<>() // Authorities (Roles) - empty for now
+                new ArrayList<>()
         );
     }
 
-    // REGISTRATION LOGIC: Securely saves a new user
+    // REGISTRATION LOGIC
     public User registerUser(User user) {
-        // 1. Check if phone already exists
         if (userRepository.existsByPhoneNumber(user.getPhoneNumber())) {
             throw new RuntimeException("Phone number already registered");
         }
 
-        // 2. Encrypt the Password (for Login)
         user.setPasswordHash(passwordEncoder.encode(user.getPasswordHash()));
-
-        // 3. Encrypt the PIN (for Transactions)
-        // We reuse the password encoder because it's secure (BCrypt)
         user.setTransactionPinHash(passwordEncoder.encode(user.getTransactionPinHash()));
 
-        // 4. Save to DB
         return userRepository.save(user);
     }
 }

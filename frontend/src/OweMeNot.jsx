@@ -144,7 +144,7 @@ const LoginScreen = ({ onLogin }) => {
     </div>
   );
 };
-// --- 2. HOME VIEW (With Send Money Feature) ---
+// --- 2. HOME VIEW (Airtime Removed) ---
 const HomeView = ({ user, navigate, onBalanceUpdate }) => {
   // Modals State
   const [activeModal, setActiveModal] = useState(null); // 'topup' or 'send' or null
@@ -168,6 +168,10 @@ const HomeView = ({ user, navigate, onBalanceUpdate }) => {
     setActiveModal(null);
     setAmountInput('');
     setReceiverPhone('');
+  };
+
+  const handleFeatureUnavailable = (featureName) => {
+    showNotification(`${featureName} feature coming soon! 🚧`, 'info');
   };
 
   // --- HANDLER: TOP UP ---
@@ -195,7 +199,7 @@ const HomeView = ({ user, navigate, onBalanceUpdate }) => {
     }
   };
 
-  // --- HANDLER: SEND MONEY (NEW) ---
+  // --- HANDLER: SEND MONEY ---
   const handleSendMoney = async () => {
     if (!amountInput || !receiverPhone) {
         showNotification("Please enter phone and amount", 'error');
@@ -215,19 +219,15 @@ const HomeView = ({ user, navigate, onBalanceUpdate }) => {
 
       if (response.ok) {
         const data = await response.json();
-        onBalanceUpdate(data.balance);
+        onBalanceUpdate(data.balance); 
         closeModal();
-        showNotification(data.message);
+        showNotification(data.message); 
       } else {
-        // ✅ FIX: Read error as TEXT first, then try to parse JSON
         const rawError = await response.text(); 
-        console.error("Backend Error:", rawError); // Look at Console (F12)
-        
         try {
             const jsonError = JSON.parse(rawError);
             showNotification(jsonError.message || "Transfer Failed", 'error');
         } catch (e) {
-            // If it's not JSON (e.g. 404 Not Found), show the raw text
             showNotification("Failed: " + rawError, 'error');
         }
       }
@@ -243,8 +243,8 @@ const HomeView = ({ user, navigate, onBalanceUpdate }) => {
       
       {/* 1. NOTIFICATION BANNER */}
       {notification && (
-        <div className={`fixed top-20 left-6 right-6 p-4 rounded-2xl shadow-lg z-50 flex items-center justify-center gap-2 animate-in slide-in-from-top duration-300 ${notification.type === 'error' ? 'bg-red-500 text-white' : 'bg-slate-900 text-white'}`}>
-          {notification.type === 'success' ? <CheckCircle className="w-5 h-5"/> : <ShieldAlert className="w-5 h-5"/>}
+        <div className={`fixed top-20 left-6 right-6 p-4 rounded-2xl shadow-lg z-50 flex items-center justify-center gap-2 animate-in slide-in-from-top duration-300 ${notification.type === 'error' ? 'bg-red-500 text-white' : (notification.type === 'info' ? 'bg-blue-600 text-white' : 'bg-slate-900 text-white')}`}>
+          {notification.type === 'success' ? <CheckCircle className="w-5 h-5"/> : (notification.type === 'info' ? <Activity className="w-5 h-5"/> : <ShieldAlert className="w-5 h-5"/>)}
           <span className="font-bold text-sm">{notification.msg}</span>
         </div>
       )}
@@ -317,20 +317,20 @@ const HomeView = ({ user, navigate, onBalanceUpdate }) => {
 
       <div>
         <h3 className="font-bold text-lg mb-4 text-slate-800">Quick Actions</h3>
-        <div className="grid grid-cols-4 gap-3">
-          {/* TOP UP */}
+        {/* ✅ FIXED GRID AND REMOVED AIRTIME */}
+        <div className="grid grid-cols-3 gap-3">
           <ActionButton 
             icon={<Wallet />} label="Top Up" color="bg-blue-50 text-blue-600" 
             onClick={() => setActiveModal('topup')} 
           />
-          {/* SEND (Now Active!) */}
           <ActionButton 
             icon={<Send />} label="Send" color="bg-purple-50 text-purple-600" 
             onClick={() => setActiveModal('send')} 
           />
-          
-          <ActionButton icon={<FileText />} label="Bills" color="bg-orange-50 text-orange-600" />
-          <ActionButton icon={<Smartphone />} label="Airtime" color="bg-green-50 text-green-600" />
+          <ActionButton 
+            icon={<FileText />} label="Bills" color="bg-orange-50 text-orange-600" 
+            onClick={() => handleFeatureUnavailable("Bill Payment")}
+          />
         </div>
       </div>
 
@@ -359,7 +359,6 @@ const HomeView = ({ user, navigate, onBalanceUpdate }) => {
     </div>
   );
 };
-
 const ActionButton = ({ icon, label, color, onClick }) => (
   <button onClick={onClick} className="flex flex-col items-center gap-2 group">
     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-transform group-active:scale-95 ${color}`}>

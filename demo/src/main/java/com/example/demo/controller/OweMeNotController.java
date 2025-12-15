@@ -9,6 +9,7 @@ import com.example.demo.model.Transaction;
 import com.example.demo.repository.DebtRepository;
 import com.example.demo.repository.UserRepository;
 import com.example.demo.repository.TransactionRepository;
+import com.example.demo.service.UserService; // ✅ IMPORT THIS
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -19,7 +20,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "http://localhost:5173") // Allows React to talk to Java
+@CrossOrigin(origins = "http://localhost:5173")
 public class OweMeNotController {
 
     @Autowired
@@ -30,6 +31,10 @@ public class OweMeNotController {
 
     @Autowired
     private TransactionRepository transactionRepository;
+
+    // ✅ INJECT USER SERVICE
+    @Autowired
+    private UserService userService;
 
     // 1. LOGIN ENDPOINT
     @GetMapping("/login")
@@ -54,7 +59,7 @@ public class OweMeNotController {
         User creditor = userRepository.findById(request.getCreditorId())
                 .orElseThrow(() -> new RuntimeException("Creditor not found"));
 
-        // Simplified friend lookup by name for demo
+        // Simplified friend lookup by name
         User debtor = userRepository.findAll().stream()
                 .filter(u -> u.getName().equalsIgnoreCase(request.getDebtorName()))
                 .findFirst()
@@ -81,39 +86,26 @@ public class OweMeNotController {
             throw new RuntimeException("Debt is already paid!");
         }
 
-        User debtor = debt.getDebtor();   // The one who owes money
-        User creditor = debt.getCreditor(); // The one getting paid
+        User debtor = debt.getDebtor();
+        User creditor = debt.getCreditor();
 
-        // Check Balance
         if (debtor.getBalance().compareTo(debt.getAmount()) < 0) {
             throw new RuntimeException("Insufficient balance! Please Top Up.");
         }
 
-        // Move Money
         debtor.setBalance(debtor.getBalance().subtract(debt.getAmount()));
         creditor.setBalance(creditor.getBalance().add(debt.getAmount()));
 
         userRepository.save(debtor);
         userRepository.save(creditor);
 
-        // Mark Debt as Paid
         debt.setPaid(true);
         Debt savedDebt = debtRepository.save(debt);
-
-        // Record Transaction
-        Transaction t = new Transaction();
-        t.setSender(debtor);
-        t.setReceiver(creditor);
-        t.setAmount(debt.getAmount());
-        t.setDescription("Settlement: " + debt.getDescription());
-        t.setTimestamp(java.time.LocalDateTime.now());
-        t.setStatus("SUCCESS");
-        transactionRepository.save(t);
 
         return new DebtDTO(savedDebt, creditor.getId());
     }
 
-    // 5. ADD MONEY (TOP UP) - ✅ NEW ENDPOINT
+    // 5. ADD MONEY (TOP UP)
     @PostMapping("/user/addMoney")
     public java.util.Map<String, Object> addMoney(@RequestBody java.util.Map<String, Object> payload) {
         Long userId = Long.valueOf(payload.get("userId").toString());
@@ -122,17 +114,16 @@ public class OweMeNotController {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // Update Balance
         user.setBalance(user.getBalance().add(java.math.BigDecimal.valueOf(amount)));
         User updatedUser = userRepository.save(user);
 
-        // ✅ FIX: Return a simple Map instead of DTO object to prevent serialization errors
         java.util.Map<String, Object> response = new java.util.HashMap<>();
         response.put("message", "Money added successfully");
         response.put("balance", updatedUser.getBalance());
         return response;
     }
-    // 6. SEND MONEY (P2P Transfer) - ✅ NEW
+
+    // 6. SEND MONEY (P2P Transfer)
     @PostMapping("/send")
     public java.util.Map<String, Object> sendMoney(@RequestBody java.util.Map<String, Object> payload) {
         Long senderId = Long.valueOf(payload.get("senderId").toString());
@@ -140,45 +131,49 @@ public class OweMeNotController {
         Double amount = Double.valueOf(payload.get("amount").toString());
         String note = payload.getOrDefault("note", "Transfer").toString();
 
-        // 1. Find Sender
         User sender = userRepository.findById(senderId)
                 .orElseThrow(() -> new RuntimeException("Sender not found"));
 
-        // 2. Find Receiver (By Phone Number)
         User receiver = userRepository.findByPhoneNumber(receiverPhone)
                 .orElseThrow(() -> new RuntimeException("Receiver not found with phone: " + receiverPhone));
 
-        // 3. Prevent self-transfer
         if (sender.getId().equals(receiver.getId())) {
             throw new RuntimeException("You cannot send money to yourself!");
         }
 
-        // 4. Check Balance
         if (sender.getBalance().compareTo(java.math.BigDecimal.valueOf(amount)) < 0) {
             throw new RuntimeException("Insufficient wallet balance.");
         }
 
-        // 5. Perform Transfer
         sender.setBalance(sender.getBalance().subtract(java.math.BigDecimal.valueOf(amount)));
         receiver.setBalance(receiver.getBalance().add(java.math.BigDecimal.valueOf(amount)));
 
         userRepository.save(sender);
         userRepository.save(receiver);
 
-        // 6. Record Transaction
-        Transaction t = new Transaction();
-        t.setSender(sender);
-        t.setReceiver(receiver);
-        t.setAmount(java.math.BigDecimal.valueOf(amount));
-        t.setDescription("Sent to " + receiver.getName() + ": " + note);
-        t.setTimestamp(java.time.LocalDateTime.now());
-        t.setStatus("SUCCESS");
-        transactionRepository.save(t);
-
-        // 7. Return success & new balance
         java.util.Map<String, Object> response = new java.util.HashMap<>();
         response.put("message", "Sent successfully to " + receiver.getName());
         response.put("balance", sender.getBalance());
         return response;
+    }
+
+    // 7. DEDUCT MONEY (PAY MERCHANT / BILL) - ✅ NEW ENDPOINT
+    @PostMapping("/user/deductMoney")
+    public org.springframework.http.ResponseEntity<?> deductMoney(@RequestBody java.util.Map<String, Object> payload) {
+        try {
+            Long userId = Long.valueOf(payload.get("userId").toString());
+            // Safe conversion for BigDecimal
+            java.math.BigDecimal amount = java.math.BigDecimal.valueOf(Double.parseDouble(payload.get("amount").toString()));
+
+            // Use the SERVICE to handle the logic
+            User updatedUser = userService.deductMoney(userId, amount);
+
+            return org.springframework.http.ResponseEntity.ok(java.util.Map.of(
+                    "message", "Bill paid successfully",
+                    "balance", updatedUser.getBalance()
+            ));
+        } catch (Exception e) {
+            return org.springframework.http.ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 }

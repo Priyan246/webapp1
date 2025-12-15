@@ -10,6 +10,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal; // ✅ MAKE SURE THIS IMPORT IS HERE
 import java.util.ArrayList;
 
 @Service
@@ -19,10 +20,8 @@ public class UserService implements UserDetailsService {
     private UserRepository userRepository;
 
     @Autowired
-    @Lazy // Good practice: Prevents circular dependency with SecurityConfig
+    @Lazy
     private PasswordEncoder passwordEncoder;
-
-    // DELETED THE SELF-REFERENCING LINES HERE
 
     // LOGIN LOGIC
     @Override
@@ -46,6 +45,19 @@ public class UserService implements UserDetailsService {
         user.setPasswordHash(passwordEncoder.encode(user.getPasswordHash()));
         user.setTransactionPinHash(passwordEncoder.encode(user.getTransactionPinHash()));
 
+        return userRepository.save(user);
+    }
+
+    // ✅ THIS IS THE MISSING METHOD YOU NEED
+    public User deductMoney(Long userId, BigDecimal amount) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (user.getBalance().compareTo(amount) < 0) {
+            throw new RuntimeException("Insufficient funds! Your balance is: " + user.getBalance());
+        }
+
+        user.setBalance(user.getBalance().subtract(amount));
         return userRepository.save(user);
     }
 }

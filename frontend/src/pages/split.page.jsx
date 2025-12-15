@@ -1,19 +1,31 @@
 import React, { useState } from 'react';
-import { Plus, X, Users } from 'lucide-react';
+import { Plus, X, Users, CheckCircle, ShieldAlert } from 'lucide-react';
 import { THEME } from '../theme';
 import { useNavigate } from 'react-router-dom';
 
-const SplitBillPage = ({ user }) => {
+const SplitBillPage = ({ user, onBalanceUpdate }) => {
   const navigate = useNavigate();
   const [amount, setAmount] = useState('');
-  const [selectedFriends, setSelectedFriends] = useState([]); // Changed to Array
+  const [selectedFriends, setSelectedFriends] = useState([]); 
   const [description, setDescription] = useState('Split Bill');
   const [isSending, setIsSending] = useState(false);
   
-  // Hardcoded friends for now (In real app, fetch these from API)
+  // ✅ NEW: Notification State
+  const [notification, setNotification] = useState(null);
+
+  // Mock Friends
   const friends = ['Bob', 'Charlie', 'David', 'Alice'];
 
-  // Toggle friend selection
+  // Helper to show in-app notification
+  const showNotification = (msg, type = 'success') => {
+    setNotification({ msg, type });
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+        setNotification(null);
+        if (type === 'success') navigate('/debts'); // Redirect only on success
+    }, 3000);
+  };
+
   const toggleFriend = (name) => {
     if (selectedFriends.includes(name)) {
       setSelectedFriends(prev => prev.filter(f => f !== name));
@@ -24,19 +36,42 @@ const SplitBillPage = ({ user }) => {
 
   const handleSplit = async () => {
     const totalAmount = parseFloat(amount);
-    if (!amount || selectedFriends.length === 0) {
-      alert("Please enter amount and select at least one friend.");
-      return;
+    
+    if (!amount || totalAmount <= 0) {
+        showNotification("Please enter a valid amount", "error");
+        return;
+    }
+    if (selectedFriends.length === 0) {
+        showNotification("Select at least one friend", "error");
+        return;
     }
 
     setIsSending(true);
 
-    // 1. Math Logic: Total / (You + Friends)
-    const totalPeople = selectedFriends.length + 1; 
-    const splitAmount = (totalAmount / totalPeople).toFixed(2); 
-
     try {
-      // 2. Create a request for EACH selected friend
+      // --- STEP A: PAY THE BILL (Deduct Total from You) ---
+      const payResponse = await fetch('http://localhost:8080/api/wallet/deduct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user.id,
+          amount: totalAmount
+        })
+      });
+
+      if (!payResponse.ok) {
+        const errorMsg = await payResponse.text();
+        throw new Error(errorMsg || "Payment Failed");
+      }
+
+      // Update the balance in the App immediately
+      const payData = await payResponse.json();
+      onBalanceUpdate(payData.balance);
+
+      // --- STEP B: SPLIT THE BILL (Create Debts) ---
+      const totalPeople = selectedFriends.length + 1; 
+      const splitAmount = (totalAmount / totalPeople).toFixed(2); 
+      
       const promises = selectedFriends.map(friendName => {
         return fetch('http://localhost:8080/api/debts', {
           method: 'POST',
@@ -44,38 +79,46 @@ const SplitBillPage = ({ user }) => {
           body: JSON.stringify({
             creditorId: user.id,
             debtorName: friendName,
-            amount: parseFloat(splitAmount), // Send the SPLIT amount, not total
+            amount: parseFloat(splitAmount),
             description: `${description} (Split)`
           })
         });
       });
 
-      // Wait for all API calls to finish
       await Promise.all(promises);
 
-      alert(`Success! Split ₹${totalAmount} among ${totalPeople} people. Each owes ₹${splitAmount}.`);
-      navigate('/debts');
+      // ✅ SUCCESS: Show In-App Notification (No more Alert!)
+      showNotification(`Bill Paid! New Balance: ₹${payData.balance}`, 'success');
+
     } catch (error) {
       console.error(error);
-      alert("Error connecting to server.");
+      showNotification(error.message || "Error processing transaction", 'error');
     } finally {
       setIsSending(false);
     }
   };
 
-  // Helper to calculate preview
   const getSplitPreview = () => {
     if (!amount || selectedFriends.length === 0) return "0.00";
     return (parseFloat(amount) / (selectedFriends.length + 1)).toFixed(2);
   };
 
   return (
-    <div className="space-y-6 animate-in slide-in-from-right duration-300 pb-24">
+    <div className="space-y-6 animate-in slide-in-from-right duration-300 pb-24 relative">
+        
+        {/* ✅ NEW: NOTIFICATION BANNER */}
+        {notification && (
+            <div className={`fixed top-6 left-6 right-6 p-4 rounded-2xl shadow-xl z-50 flex items-center justify-center gap-3 animate-in slide-in-from-top duration-300 ${notification.type === 'error' ? 'bg-red-500 text-white' : 'bg-slate-900 text-white'}`}>
+                {notification.type === 'error' ? <ShieldAlert className="w-5 h-5"/> : <CheckCircle className="w-5 h-5"/>}
+                <span className="font-bold text-sm">{notification.msg}</span>
+            </div>
+        )}
+
         <div className="flex items-center justify-between mb-2">
             <h2 className="text-2xl font-bold text-slate-900">Split Bill</h2>
         </div>
 
-        {/* Amount Input */}
+        {/* Input Section */}
         <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100 text-center">
              <p className="text-slate-400 text-sm font-bold uppercase mb-2">Total Bill Amount</p>
              <div className="flex justify-center items-center gap-1 text-slate-900">
@@ -97,7 +140,7 @@ const SplitBillPage = ({ user }) => {
              />
         </div>
 
-        {/* Friend Selection */}
+        {/* Friends Selection */}
         <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
              <div className="flex justify-between items-center mb-4">
                <p className="text-slate-400 text-sm font-bold uppercase">Split With</p>
@@ -118,16 +161,10 @@ const SplitBillPage = ({ user }) => {
                       </div>
                     );
                 })}
-                <div className="flex flex-col items-center gap-2 min-w-[60px]">
-                    <div className="w-14 h-14 border-2 border-dashed border-slate-300 rounded-full flex items-center justify-center text-slate-400">
-                        <Plus />
-                    </div>
-                    <span className="text-xs font-medium">Add</span>
-                </div>
              </div>
         </div>
         
-        {/* Math Preview Box */}
+        {/* Preview Box */}
         {selectedFriends.length > 0 && amount > 0 && (
           <div className="bg-slate-900 text-white p-4 rounded-2xl flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -150,7 +187,7 @@ const SplitBillPage = ({ user }) => {
           disabled={isSending || selectedFriends.length === 0}
           className={`w-full py-4 ${THEME.primary} ${THEME.roundedBtn} font-bold text-lg shadow-lg shadow-purple-200 disabled:opacity-50 disabled:cursor-not-allowed`}
         >
-            {isSending ? 'Splitting...' : `Split ₹${amount}`}
+            {isSending ? 'Processing...' : `Pay & Split ₹${amount}`}
         </button>
     </div>
   );

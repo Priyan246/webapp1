@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Bell } from 'lucide-react';
 import { THEME } from './theme';
 
@@ -11,7 +11,7 @@ import SplitBillPage from './pages/split.page';
 import DebtsPage from './pages/debts.page';
 import ProfilePage from './pages/profile.page';
 
-// A Layout Component to wrap authenticated pages (Header + Nav)
+// Layout Component (Header + Bottom Nav)
 const MainLayout = ({ children, user }) => {
   return (
     <div className={`min-h-screen ${THEME.bg} ${THEME.textMain} font-sans`}>
@@ -46,6 +46,7 @@ const MainLayout = ({ children, user }) => {
 const App = () => {
   const [user, setUser] = useState(null);
 
+  // Handle Login
   const handleLogin = async (phone, pin) => {
     try {
       const response = await fetch(`http://localhost:8080/api/login?phone=${phone}`);
@@ -57,8 +58,10 @@ const App = () => {
     }
   };
 
+  // Handle Logout
   const handleLogout = () => setUser(null);
 
+  // Handle Balance Updates (Top Up, Payment, Splitting)
   const updateUserBalance = (newBalance) => {
     setUser(prev => ({ ...prev, balance: newBalance }));
   };
@@ -77,16 +80,20 @@ const App = () => {
                 <HomePage user={user} onBalanceUpdate={updateUserBalance} />
               </MainLayout>
             } />
+            
             <Route path="/split" element={
               <MainLayout user={user}>
-                <SplitBillPage user={user} />
+                {/* ✅ CRITICAL: Passing onBalanceUpdate here ensures Header updates after split */}
+                <SplitBillPage user={user} onBalanceUpdate={updateUserBalance} />
               </MainLayout>
             } />
+            
             <Route path="/debts" element={
               <MainLayout user={user}>
                 <DebtsPage user={user} onBalanceUpdate={updateUserBalance} />
               </MainLayout>
             } />
+            
             <Route path="/profile" element={
               <MainLayout user={user}>
                 <ProfilePage user={user} onLogout={handleLogout} />
